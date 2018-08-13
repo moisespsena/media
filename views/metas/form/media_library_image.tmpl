@@ -1,10 +1,16 @@
 {{$value := (raw_value_of .ResourceValue .Meta)}}
+<div class="qor-field">
+
+<label class="qor-field__label" for="{{.InputId}}">
+  {{meta_label .Meta}}
+</label>
 
 <div class="qor-field__block qor-file qor-file__image">
 
 <!-- Start: file form -->
 <div class="qor-fieldset" data-tab-source="file">
   <textarea class="qor-file__options hidden" data-cropper-title="{{t "qor_media_library.form.crop_image" "Crop image"}}" data-cropper-cancel="{{t "qor_media_library.form.cancel" "Cancel"}}" data-cropper-ok="{{t "qor_media_library.form.ok" "OK"}}" name="{{.InputName}}" aria-hidden="true">{{if $value}}{{$value.Value}}{{end}}</textarea>
+
 
   <div class="qor-file__list">
     {{if $value.GetSizes}}
@@ -31,4 +37,5 @@
   </label>
 </div>
 <!-- End: file form -->
+</div>
 </div>
