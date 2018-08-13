@@ -17,6 +17,10 @@ import (
 	"text/template"
 	"time"
 
+	"reflect"
+
+	"code.cloudfoundry.org/bytefmt"
+	"github.com/dustin/go-humanize"
 	"github.com/gosimple/slug"
 	"github.com/jinzhu/gorm"
 	"github.com/jinzhu/inflection"
@@ -55,6 +59,102 @@ type Base struct {
 	Reader      io.Reader              `json:"-"`
 	Options     map[string]string      `json:",omitempty"`
 	cropped     bool
+}
+
+func (b *Base) CallFieldScan(field *reflect.StructField, data interface{}, scan func(data interface{}) error) (err error) {
+	tags := utils.ParseTagOption(field.Tag.Get("oss"))
+	var (
+		types    []string
+		fileName string
+		size     uint64
+		maxSize  uint64
+		check    []func()
+	)
+
+	if tag, ok := tags["TYPES"]; ok {
+		for _, typ := range strings.Split(tag, ",") {
+			typ = strings.TrimSpace(typ)
+			if typ != "" {
+				types = append(types, strings.ToLower(typ))
+			}
+
+			check = append(check, func() {
+				ext := strings.ToLower(strings.TrimPrefix(filepath.Ext(fileName), "."))
+
+				for _, typ := range types {
+					if typ == ext {
+						return
+					}
+				}
+				err = fmt.Errorf("Invalid file type %q", ext)
+			})
+		}
+	}
+
+	if tag, ok := tags["MAX-SIZE"]; ok {
+		maxSize, err = bytefmt.ToBytes(strings.TrimSpace(tag))
+		if err != nil {
+			return fmt.Errorf("Parse Field TAG MAX-SIZE: %v", err)
+		}
+
+		check = append(check, func() {
+			if size > maxSize {
+				err = fmt.Errorf("Very large file. The expected maximum size is %s, but obtained %s.",
+					humanize.Bytes(maxSize), humanize.Bytes(size))
+			}
+		})
+	}
+
+	if len(types) > 0 || maxSize > 0 {
+		switch values := data.(type) {
+		case *os.File:
+			fileName = values.Name()
+			var stat os.FileInfo
+			if stat, err = values.Stat(); err != nil {
+				return
+			}
+			size = uint64(stat.Size())
+		case *multipart.FileHeader:
+			fileName = values.Filename
+			size = uint64(values.Size)
+		case []*multipart.FileHeader:
+			if len(values) == 1 {
+				if file := values[0]; file.Size > 0 {
+					fileName = file.Filename
+					size = uint64(file.Size)
+				}
+			} else if len(values) > 1 {
+				for i, file := range values {
+					if file.Size > 0 {
+						fileName = file.Filename
+						size = uint64(file.Size)
+						for _, cb := range check {
+							cb()
+							if err != nil {
+								return fmt.Errorf("File #%d: %v", i, err)
+							}
+						}
+					}
+				}
+				check = []func(){}
+			}
+		}
+
+		if fileName != "" && size > 0 {
+			for _, cb := range check {
+				cb()
+				if err != nil {
+					return err
+				}
+			}
+		}
+	}
+
+	return scan(data)
+}
+
+func (b *Base) FieldScan(field *reflect.StructField, data interface{}) (err error) {
+	return b.CallFieldScan(field, data, b.Scan)
 }
 
 // Scan scan files, crop options, db values into struct

@@ -108,6 +108,10 @@ func (mediaLibraryStorage MediaLibraryStorage) GetSizes() map[string]*media.Size
 	return sizes
 }
 
+func (mediaLibraryStorage *MediaLibraryStorage) FieldScan(field *reflect.StructField, data interface{}) (err error) {
+	return mediaLibraryStorage.CallFieldScan(field, data, mediaLibraryStorage.Scan)
+}
+
 func (mediaLibraryStorage *MediaLibraryStorage) Scan(data interface{}) (err error) {
 	switch values := data.(type) {
 	case []byte:
@@ -166,7 +170,9 @@ func (mediaLibraryStorage MediaLibraryStorage) Value() (driver.Value, error) {
 
 func (mediaLibraryStorage MediaLibraryStorage) ConfigureQorMeta(metaor resource.Metaor) {
 	if meta, ok := metaor.(*admin.Meta); ok {
-		meta.Type = "media_library"
+		if meta.Type == "" {
+			meta.Type = "media_library"
+		}
 		meta.SetFormattedValuer(func(record interface{}, context *qor.Context) interface{} {
 			return meta.GetValuer()(record, context)
 		})
